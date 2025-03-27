@@ -1,58 +1,86 @@
-import gym
 import numpy as np
 import random
 
-# Create the FrozenLake environment
-env = gym.make('FrozenLake-v1', is_slippery=False)
+# Define the gridworld environment
+class GridWorld:
+    def __init__(self):
+        self.grid = np.array([
+            [0, 0, 0, 1],  # Goal at (0, 3)
+            [0, -1, 0, 0],  # Wall with reward -1
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]  # Start at (3, 0)
+        ])
+        self.start_state = (3, 0)
+        self.state = self.start_state
 
-# Initialize the Q-table
-num_states = env.observation_space.n
-num_actions = env.action_space.n
-Q_table = np.zeros((num_states, num_actions))
+    def reset(self):
+        self.state = self.start_state
+        return self.state
 
-# Parameters
-total_episodes = 1000
-learning_rate = 0.8
-max_steps = 99
-gamma = 0.95
-epsilon = 1.0
-max_epsilon = 1.0
-min_epsilon = 0.01
-decay_rate = 0.01
+    def is_terminal(self, state):
+        return self.grid[state] == 1 or self.grid[state] == -1
 
-# The Q-learning algorithm
-for episode in range(total_episodes):
+    def get_next_state(self, state, action):
+        next_state = list(state)
+        if action == 0:  # Move up
+            next_state[0] = max(0, state[0] - 1)
+        elif action == 1:  # Move right
+            next_state[1] = min(3, state[1] + 1)
+        elif action == 2:  # Move down
+            next_state[0] = min(3, state[0] + 1)
+        elif action == 3:  # Move left
+            next_state[1] = max(0, state[1] - 1)
+        return tuple(next_state)
+
+    def step(self, action):
+        next_state = self.get_next_state(self.state, action)
+        reward = self.grid[next_state]
+        self.state = next_state
+        done = self.is_terminal(next_state)
+        return next_state, reward, done
+
+class QLearningAgent:
+    def __init__(self, learning_rate=0.1, discount_factor=0.9, exploration_rate=0.1):
+        self.q_table = np.zeros((4, 4, 4))  # Q-values for each state-action pair
+        self.learning_rate = learning_rate
+        self.discount_factor = discount_factor
+        self.exploration_rate = exploration_rate
+
+    def choose_action(self, state):
+        if random.uniform(0, 1) < self.exploration_rate:
+            return random.randint(0, 3)  # Explore
+        else:
+            return np.argmax(self.q_table[state])  # Exploit
+
+    def update_q_value(self, state, action, reward, next_state):
+        max_future_q = np.max(self.q_table[next_state])  # Best Q-value for next state
+        current_q = self.q_table[state][action]
+        # Q-learning formula
+        self.q_table[state][action] = current_q + self.learning_rate * (
+            reward + self.discount_factor * max_future_q - current_q
+        )
+
+env = GridWorld()
+agent = QLearningAgent()
+
+# Train the agent
+episodes = 1000  # Number of training episodes
+for episode in range(episodes):
     state = env.reset()
     done = False
-    for step in range(max_steps):
-        # Choose an action in the current world state (s)
-        # First we randomize a number
-        exp_exp_tradeoff = random.uniform(0, 1)
+    while not done:
+        action = agent.choose_action(state)
+        next_state, reward, done = env.step(action)
+        agent.update_q_value(state, action, reward, next_state)
+        state = next_state
 
-        # If this number > epsilon --> exploitation (taking the biggest Q value for this state)
-        if exp_exp_tradeoff > epsilon:
-            action = np.argmax(Q_table[state,:])
-        # Else doing a random choice --> exploration
-        else:
-            action = env.action_space.sample()
-
-        # Take the action (a) and observe the outcome state(s') and reward (r)
-        new_state, reward, done, info = env.step(action)
-
-        # Update Q(s,a):= Q(s,a) + lr [R(s,a) + gamma * max Q(s',a') - Q(s,a)]
-        Q_table[state, action] = Q_table[state, action] + learning_rate * (reward + gamma * np.max(Q_table[new_state, :]) - Q_table[state, action])
-
-        # Our new state is state
-        state = new_state
-
-        # If done: finish episode
-        if done:
-            break
-
-    # Reduce epsilon (because we need less and less exploration)
-    epsilon = min_epsilon + (max_epsilon - min_epsilon) * np.exp(-decay_rate * episode)
-
-# Print the Q-table
-print("Q-table:")
-print(Q_table)
-
+# Test the trained agent
+state = env.reset()
+done = False
+print("\n Testing agent after training ... \n")
+while not done:
+    action = np.argmax(agent.q_table[state])
+    next_state, reward, done = env.step(action)
+    print(f"State: {state}, Action: {action}, Reward: {reward}")
+    state = next_state
+print("\n Agent reached terminal State.")
